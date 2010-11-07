@@ -268,7 +268,9 @@ module Packet
 		default_initializer :entity_id,:name,:x,:y,:z,:yaw,:pitch,:held_item_id
 		def self.from_player(player)
 			p=player.position
-			self.new(player.entity_id,player.username,p.x,p.y,p.z,p.yaw,p.pitch,0)
+			self.new(player.entity_id,player.username,
+				p.x.to_abs_position,p.y.to_abs_position,p.z.to_abs_position,
+				p.yaw.to_byte_rotation,p.pitch.to_byte_rotation,0)
 		end
 		def to_s
 			[my_tag,@entity_id].pack("CN")+@name.to_java_string+[@x,@y,@z,@yaw,@pitch,@held_item_id].pack("NNNCCn")
@@ -365,14 +367,27 @@ module Packet
 		default_initializer :entity_id, :x,:y,:z, :yaw, :pitch
 		def self.from_player(player)
 			p=player.position
-			self.new(player.entity_id,p.x*32,p.y*32,p.z*32,p.yaw,p.pitch)
-			
+			self.new(player.entity_id,
+				p.x.to_abs_position,p.y.to_abs_position,p.z.to_abs_position,
+				p.yaw.to_byte_rotation,p.pitch.to_byte_rotation)
 		end
 		def to_s
 			[my_tag,@entity_id, @x,@y,@z, @yaw, @pitch].pack("CNNNNCC")
 		end
 	end
 	
+	class Disconnect < BasicPacket
+		tag 0xFF
+		directions BOTH #when it's client to server, it's a 'quit', when it's server to client, it's a 'kick'. I'm just going to call it a disconnect and not write two identical packets.
+		attr_accessor :reason
+		default_initializer [:reason,"''"]
+		def self.read_from_socket(s)
+			self.new(s.read_java_string)
+		end
+		def to_s
+			[my_tag].pack("C")+@reason.to_java_string
+		end
+	end
 	#TODO: the rest
 	all_packets=constants.map {|x| const_get x}.select {|x| x.respond_to?(:directions)} -[BasicPacket]
 #	require 'pp'

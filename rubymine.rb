@@ -1,22 +1,36 @@
 require 'socket'
 require 'zlib'
 
+require 'pp'
+
 require 'packets.rb'
 require 'things.rb'
 
 server=TCPServer.new 25565
-p=Player.new
-p.socket=server.accept
-players=[p]
+players=[]
+
 
 def send_level(socket)
 	#generate the level. it will just be 16x16 bedrocks on the bottom, with air above.
 	full_level=[
-		block_type_array=("\007"+"\000"*127)*16*16,
+		block_type_array=("\007"+"\000"*127)*(16*16),
 		metadata_array=("\000")*(block_type_array.length/2), #no metadata
 		block_light_array=("\000")*(block_type_array.length/2), #no block light?
 		sky_light_array=("\377")*(block_type_array.length/2) #full sky light?
 	]
+	#put a little node at the 8 edges of the chunk
+	block_type_array[1+(0*128)+(0*128*16)]=2.chr # NorthEast = grass
+	block_type_array[1+(7*128)+(0*128*16)]=5.chr # North=wood
+	block_type_array[1+(15*128)+(0*128*16)]=18.chr # NorthWest=leaves
+	
+	block_type_array[1+(0*128)+(7*128*16)]=41.chr # East = gold block
+	block_type_array[1+(7*128)+(7*128*16)]=12.chr # Center=sand
+	block_type_array[1+(15*128)+(7*128*16)]=20.chr # West=glass
+	
+	block_type_array[1+(0*128)+(15*128*16)]=45.chr # SouthEast = Brick
+	block_type_array[1+(7*128)+(15*128*16)]=57.chr # South=Diamond Block
+	block_type_array[1+(15*128)+(15*128*16)]=86.chr # SouthWest=Pumpkin
+	
 	compressed_level=Zlib::Deflate.deflate(full_level*"")
 	
 	for x in -3..3 do 
@@ -36,8 +50,8 @@ def send_level(socket)
 	out_message << (16-1).chr #size_z
 	
 	out_message << [compressed_level.length].pack("N") #send the size
-	puts "sending #{compressed_level.length} bytes for the level. current packet length = #{out_message.length}"
-	puts "uncompressed size = #{Zlib::Inflate.inflate(compressed_level).length}"
+	#puts "sending #{compressed_level.length} bytes for the level. current packet length = #{out_message.length}"
+	#puts "uncompressed size = #{Zlib::Inflate.inflate(compressed_level).length}"
 	out_message << compressed_level
 	socket.write(out_message)
 	end
@@ -45,20 +59,9 @@ def send_level(socket)
 
 end
 
-#handshake procedure
-begin
 
-require 'pp'
 
-#run the handler in a seperate thread
-Thread.start do
-while true
-	p=Player.new
-	p.socket=server.accept
-	players << p
-end
-end
-
+=begin #uncomment this for some useful debugging
 class BasicSocket
 	alias_method :old_write,:write
 	def write(s)
@@ -67,18 +70,33 @@ class BasicSocket
 		old_write s
 	end
 end
+=end
+
+begin
 
 last_keepalive=Time.now
 while true
-	#puts "at top of loop"
-	c=Kernel.select(players,nil,nil,10)
-	if (Time.now-last_keepalive) > 60
+	c=Kernel.select(players+[server],nil,nil,2)
+	
+	if (Time.now-last_keepalive) > 30
 		puts "doing keepalive"
 		last_keepalive=Time.now
 		players.each {|p| p.to_io.write(Packet::KeepAlive.new)}
 	end
-	#puts "got socket: "
-	#pp c
+	if c.nil?
+		puts "timedout on socket select."
+		next
+	end
+	
+	if c[0].include? server
+		puts "adding a new player..."
+		p=Player.new
+		p.socket=server.accept
+		players << p
+		puts "\taccepted new player. count=#{players.length}"
+		c[0].delete server
+	end
+	
 	for current_player in c[0]
 		other_players = players-[current_player]
 		socket=current_player.to_io
@@ -101,9 +119,9 @@ while true
 				puts "got login request from client with username #{packet.username} and password #{packet.password}. protocol version #{packet.protocol_version}. responding with login_response"
 				current_player.username=packet.username
 				socket.write(Packet::LoginResponse.new)
-				puts "sending level...."
+				#puts "sending level...."
 				send_level(socket)
-				puts "sending initial location"
+				#puts "sending initial location"
 				socket.write(Packet::StoCPlayerPosLook.new(0,0,10,10,0,0,0))
 				socket.write(Packet::ChatMessage.new("Welcome to Yen's world!"))	
 			when Packet::CtoSPlayerPosLook
@@ -118,18 +136,19 @@ while true
 					
 					#inform them of other players, and inform the other players we'll just do all, since it's a small map and we assume they're all visible
 					other_msg=Packet::NamedEntitySpawn.from_player(current_player).to_s
-					other_players.each {|p| p.to_io.write(other_msg); puts "\tdid other nameentityspawn"}
+					other_players.each {|p| p.to_io.write(other_msg)}
 					other_players.each {|p| socket.write(Packet::NamedEntitySpawn.from_player(p)); puts "\tdid my nameentityspawn"}
 				else
 					other_msg = Packet::EntityTeleport.from_player(current_player)
-					other_players.each {|p| p.to_io.write(other_msg); puts "\t did other nameentityteleport"}
+					other_players.each {|p| p.to_io.write(other_msg)}
 				end
 			when Packet::PlayerLook
+				#pp packet
 				current_player.position.update_from_packet(packet)
-				other_msg = Packet::EntityLook.new(current_player.entity_id,current_player.position.yaw,current_player.position.pitch).to_s
+				other_msg = Packet::EntityLook.new(current_player.entity_id,current_player.position.yaw.to_byte_rotation,current_player.position.pitch.to_byte_rotation).to_s
 				other_players.each {|p| p.to_io.write(other_msg)}
 			when Packet::PlayerPosition
-				pp packet
+				#pp packet
 				current_player.position.update_from_packet(packet)
 				#diff = ["x","y","z"].map {|field| (current_player.position.send(field)-current_player.last_relative_position.send(field)).to_i}
 				#if diff.map(&:abs).max > 0
@@ -142,9 +161,13 @@ while true
 					#	current_player.last_relative_position.z +=diff[2]
 					#	Packet::EntityRelativeMove.new(current_player.entity_id,*diff)
 					#end
-					other_players.each {|p| p.to_io.write(other_msg); puts "\tdid other update."}
+					other_players.each {|p| p.to_io.write(other_msg)}
 				#end
-				
+			when Packet::Disconnect
+				puts "current player is quitting for reason: #{packet.reason}"
+				players.delete current_player
+				current_player.socket.close
+				puts "now there are #{players.length} players"
 			when Packet::OnGround
 			#	puts "client tells us they are #{'not ' unless packet.is_on_ground} on the ground. good for them."
 			else

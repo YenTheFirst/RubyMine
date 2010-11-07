@@ -13,6 +13,14 @@ class Player
 	end
 end
 
+class Float
+	def to_byte_rotation
+		((self%360)/360.0 * 255).to_i
+	end
+	def to_abs_position
+		(self*32).to_i
+	end
+end
 class Position
 	attr_accessor :x,:y,:z,:yaw,:pitch,:is_on_ground,:stance
 	
