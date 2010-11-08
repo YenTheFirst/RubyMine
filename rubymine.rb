@@ -84,7 +84,7 @@ while true
 		players.each {|p| p.to_io.write(Packet::KeepAlive.new)}
 	end
 	if c.nil?
-		puts "timedout on socket select."
+		#puts "timedout on socket select."
 		next
 	end
 	
@@ -101,13 +101,13 @@ while true
 		other_players = players-[current_player]
 		socket=current_player.to_io
 		packet_type=Packet::client_packet_for_tag(tag=socket.readbyte)
-		#puts "got a packet_type: #{packet_type}"
-		raise "unknown packet #{tag}" unless packet_type
+		raise "unknown packet 0x%02x"%tag unless packet_type
 		packet=packet_type.read_from_socket(socket)
-		#puts "read the packet: #{packet}"
+		#puts "read the packet:"
+		#pp packet
 		case packet
 			when Packet::ArmAnimation
-				puts "got arm animation: #{packet.entity_id} #{packet.animate}"
+				#puts "got arm animation: #{packet.entity_id} #{packet.animate}"
 			when Packet::ChatMessage
 				puts "got message: #{packet.message}"
 				msg=Packet::ChatMessage.new("#{current_player.username}: #{packet.message}").to_s
@@ -122,11 +122,12 @@ while true
 				#puts "sending level...."
 				send_level(socket)
 				#puts "sending initial location"
-				socket.write(Packet::StoCPlayerPosLook.new(0,0,10,10,0,0,0))
+				socket.write(Packet::StoCPlayerPosLook.new(Units::BlockLength.new(0),Units::BlockLength.new(10),Units::BlockLength.new(10),Units::BlockLength.new(0),
+					Units::RotationInDegrees.new(0),Units::RotationInDegrees.new(0),0))
 				socket.write(Packet::ChatMessage.new("Welcome to Yen's world!"))	
 			when Packet::CtoSPlayerPosLook
-				pp current_player.position
-				current_player.position.update_from_packet(packet)
+				#pp current_player.position
+				current_player.position.update_from_object(packet)
 				current_player.last_relative_position=current_player.position.clone
 				
 				if (!current_player.initial_position_set)
@@ -144,12 +145,12 @@ while true
 				end
 			when Packet::PlayerLook
 				#pp packet
-				current_player.position.update_from_packet(packet)
-				other_msg = Packet::EntityLook.new(current_player.entity_id,current_player.position.yaw.to_byte_rotation,current_player.position.pitch.to_byte_rotation).to_s
+				current_player.position.update_from_object(packet)
+				other_msg = Packet::EntityLook.new(current_player.entity_id,current_player.position.yaw,current_player.position.pitch).to_s
 				other_players.each {|p| p.to_io.write(other_msg)}
 			when Packet::PlayerPosition
 				#pp packet
-				current_player.position.update_from_packet(packet)
+				current_player.position.update_from_object(packet)
 				#diff = ["x","y","z"].map {|field| (current_player.position.send(field)-current_player.last_relative_position.send(field)).to_i}
 				#if diff.map(&:abs).max > 0
 					#other_msg = if (diff.map(&:abs).max) > 4*32 #movements of more than 4 blocks use a teleport, not a relativemove
