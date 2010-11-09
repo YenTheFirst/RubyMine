@@ -5,58 +5,44 @@ require 'pp'
 
 require 'packets.rb'
 require 'things.rb'
+require 'mapdata.rb'
+
 
 server=TCPServer.new 25565
 players=[]
 
 
-def send_level(socket)
-	#generate the level. it will just be 16x16 bedrocks on the bottom, with air above.
-	full_level=[
-		block_type_array=("\007"+"\000"*127)*(16*16),
-		metadata_array=("\000")*(block_type_array.length/2), #no metadata
-		block_light_array=("\000")*(block_type_array.length/2), #no block light?
-		sky_light_array=("\377")*(block_type_array.length/2) #full sky light?
-	]
-	#put a little node at the 8 edges of the chunk
-	block_type_array[1+(0*128)+(0*128*16)]=2.chr # NorthEast = grass
-	block_type_array[1+(7*128)+(0*128*16)]=5.chr # North=wood
-	block_type_array[1+(15*128)+(0*128*16)]=18.chr # NorthWest=leaves
-	
-	block_type_array[1+(0*128)+(7*128*16)]=41.chr # East = gold block
-	block_type_array[1+(7*128)+(7*128*16)]=12.chr # Center=sand
-	block_type_array[1+(15*128)+(7*128*16)]=20.chr # West=glass
-	
-	block_type_array[1+(0*128)+(15*128*16)]=45.chr # SouthEast = Brick
-	block_type_array[1+(7*128)+(15*128*16)]=57.chr # South=Diamond Block
-	block_type_array[1+(15*128)+(15*128*16)]=86.chr # SouthWest=Pumpkin
-	
-	compressed_level=Zlib::Deflate.deflate(full_level*"")
-	
+$simple_chunk = MapData.new(Units::BlockLength.new(16),Units::BlockLength.new(128),Units::BlockLength.new(16))
+for x in (0..15)
+for z in (0..15)
+	$simple_chunk[x,0,z]={:block_type=>7}
+end
+end
+
+for i in (0..$simple_chunk.length-1) #because I haven't implemented .each yet
+	$simple_chunk[i]={:sky_light=>255}
+end
+
+#put a little node at the 8 edges of the chunk
+$simple_chunk[0,1,0]={:block_type=>2}	#NorthEast = grass
+$simple_chunk[7,1,0]={:block_type=>5}	#North=wood
+$simple_chunk[15,1,0]={:block_type=>18}	#NorthWest=leaves
+
+$simple_chunk[0,1,7]={:block_type=>41}	#East = gold block
+$simple_chunk[7,1,7]={:block_type=>12}	#Center=sand
+$simple_chunk[15,1,7]={:block_type=>20}	#West=glass
+
+$simple_chunk[0,1,15]={:block_type=>45}	# SouthEast = Brick
+$simple_chunk[7,1,15]={:block_type=>57}	# South=Diamond Block
+$simple_chunk[15,1,15]={:block_type=>86}# SouthWest=Pumpkin
+
+def send_level(socket)	
 	for x in -3..3 do 
 	for z in -3..3 do
-	#5. send pre-chunk. let's do a simple update.
-	out_message = "\062" #0x32
-	out_message << [x].pack("N") #X
-	out_message << [z].pack("N") #Z
-	out_message << "\001" #1  - load the chunk
-	socket.write(out_message)
-	
-	#send a siendmple 16x16 chunk
-	out_message = "\063" #0x33
-	out_message << [x*16,0,z*16].pack("NnN") #X,y,Z
-	out_message << (16-1).chr #size_x
-	out_message << (128-1).chr #size_y
-	out_message << (16-1).chr #size_z
-	
-	out_message << [compressed_level.length].pack("N") #send the size
-	#puts "sending #{compressed_level.length} bytes for the level. current packet length = #{out_message.length}"
-	#puts "uncompressed size = #{Zlib::Inflate.inflate(compressed_level).length}"
-	out_message << compressed_level
-	socket.write(out_message)
+		socket.write Packet::PreChunk.new(Units::ChunkLength.new(x),Units::ChunkLength.new(z),Packet::PreChunk::INITIALIZE_CHUNK)
+		socket.write Packet::MapChunk.from_map_data(Units::ChunkLength.new(x),Units::ChunkLength.new(0),Units::ChunkLength.new(z),$simple_chunk)
 	end
 	end
-
 end
 
 
@@ -75,6 +61,9 @@ end
 begin
 
 last_keepalive=Time.now
+last_tick=Time.now
+	server_time = 10000
+	tick_x,tick_y,tick_z=[-3*16,3,-3*16]
 while true
 	c=Kernel.select(players+[server],nil,nil,2)
 	
@@ -83,6 +72,29 @@ while true
 		last_keepalive=Time.now
 		players.each {|p| p.to_io.write(Packet::KeepAlive.new)}
 	end
+=begin	
+	if (Time.now-last_tick) >0.1
+		last_tick=Time.now
+		server_time+=1
+		tick_x+=1
+		if tick_x > 3*16
+			tick_x=0
+			tick_z+=1
+			if tick_z > 3*16
+				tick_z=0
+				tick_y+=1
+			end
+		end
+		puts "server_time = #{server_time}"
+		players.each {|p| p.to_io.write(Packet::TimeUpdate.new(server_time))}
+		
+		players.each do |p|
+			p.to_io.write(Packet::BlockChange.new(Units::BlockLength.new(tick_x),Units::BlockLength.new(tick_y),Units::BlockLength.new(tick_z),86,0))
+		end
+		
+	end
+=end	
+	
 	if c.nil?
 		#puts "timedout on socket select."
 		next
