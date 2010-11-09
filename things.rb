@@ -36,9 +36,10 @@ class Position
 	def update_from_object(obj)
 		for to_type,fields in [["to_block_length",%w{x y z stance}],["to_rotation_in_degrees",%w{yaw pitch}],["to_i",["is_on_ground"]]]
 			for field in fields do
+				#puts "checking field #{field}"
 				if obj.respond_to?(field)
 					instance_variable_set("@"+field,obj.send(field).send(to_type))
-					#puts "\tset field #{field} to value #{obj.send(field)} enforcing type #{to_type}"
+				#	puts "\tset field #{field} to value #{obj.send(field)} enforcing type #{to_type}"
 				end
 				
 			end

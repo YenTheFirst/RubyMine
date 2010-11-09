@@ -73,7 +73,7 @@ module Packet
 				:rotation_in_byte=>"to_rotation_in_byte_fraction",
 				:block_len=>"to_block_length",
 				:abs_len=>"to_abs_length",
-				:chunk_len=>"to_chunk_len"
+				:chunk_len=>"to_chunk_length"
 			}
 			INTERNAL_TYPE_CLASSES={
 				:rotation_in_degrees=>Units::RotationInDegrees,

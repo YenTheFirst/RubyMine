@@ -260,7 +260,7 @@ module Packet
 			@compressed_data=val
 		end
 		def map_data
-			@map_data ||= MapData.uncompress(@size_x,@size_y,@size_z,@compressed_data)
+			@map_data ||= MapData.uncompress(@size_x+1,@size_y+1,@size_z+1,@compressed_data) #the internal size_'s are -1
 		end
 		def map_data=(val)
 			@compressed_data=nil
@@ -272,6 +272,13 @@ module Packet
 				temp=orig_read_from_socket(s)
 				len=s.read(4).unpack("N")[0]
 				temp.compressed_data = s.read(len)
+				temp
+			end
+			def from_map_data(x,y,z,m)
+				one=Units::BlockLength.new(1)
+				temp=self.new(x,y,z,
+					m.size_x-one,m.size_y-one,m.size_z-one)
+				temp.map_data=m
 				temp
 			end
 		end

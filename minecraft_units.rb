@@ -11,6 +11,12 @@ module Units
 	class BasicUnit < Numeric
 		attr_accessor :val
 		def initialize(val);@val=val;end
+		def to_f
+			@val.to_f
+		end
+		def to_i
+			@val.to_i
+		end
 	end
 	#rotational
 	class RotationInDegrees < BasicUnit
@@ -19,9 +25,6 @@ module Units
 		end
 		def to_rotation_in_byte_fraction
 			RotationInByteFraction.new((@val%360) * (255.0 / 360.0))
-		end
-		def to_f
-			@val.to_f
 		end
 		#TODO: figure out which arithmatic methods make sense to override, and which don't, and whether they should take units or dimensionless values.
 		#i.e., '+' should pass it's argument through 'to_rotation_in_degrees'. 
@@ -37,9 +40,6 @@ module Units
 		def to_rotation_in_byte_fraction
 			self
 		end
-		def to_i
-			@val.to_i
-		end
 	end
 	
 	#length - it can be measured either in block lengths (which == 1 meter, apparently), or in 'pixels', which are 32 pixels:1 block.
@@ -53,8 +53,8 @@ module Units
 		def to_chunk_length
 			ChunkLength.new(@val/16)
 		end
-		def to_f
-			@val.to_f
+		def -(other)
+			BlockLength.new(@val-other.to_block_length.val)
 		end
 	end
 	class AbsLength < BasicUnit
@@ -67,9 +67,6 @@ module Units
 		def to_chunk_length
 			ChunkLength.new(@val/(16*32))
 		end
-		def to_i
-			@val.to_i
-		end
 	end
 	class ChunkLength < BasicUnit
 		def to_abs_length
@@ -80,9 +77,6 @@ module Units
 		end
 		def to_chunk_length
 			self
-		end
-		def to_i
-			@val.to_i
 		end
 	end
 end
