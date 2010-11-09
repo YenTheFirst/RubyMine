@@ -275,9 +275,8 @@ module Packet
 				temp
 			end
 			def from_map_data(x,y,z,m)
-				one=Units::BlockLength.new(1)
 				temp=self.new(x,y,z,
-					m.size_x-one,m.size_y-one,m.size_z-one)
+					m.size_x-1.block_lengths,m.size_y-1.block_lengths,m.size_z-1.block_lengths)
 				temp.map_data=m
 				temp
 			end

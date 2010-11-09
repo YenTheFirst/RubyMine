@@ -80,3 +80,21 @@ module Units
 		end
 	end
 end
+
+class Numeric
+	def degrees
+		Units::RotationInDegrees.new(self)
+	end
+	def byte_fractions #wtf to call it?
+		Units::RotationInByteFraction.new(self)
+	end
+	def block_lengths
+		Units::BlockLength.new(self)
+	end
+	def abs_lengths
+		Units::AbsLength.new(self)
+	end
+	def chunk_lengths
+		Units::ChunkLength.new(self)
+	end
+end

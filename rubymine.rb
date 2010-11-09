@@ -12,7 +12,7 @@ server=TCPServer.new 25565
 players=[]
 
 
-$simple_chunk = MapData.new(Units::BlockLength.new(16),Units::BlockLength.new(128),Units::BlockLength.new(16))
+$simple_chunk = MapData.new(16.block_lengths,128.block_lengths,16.block_lengths)
 for x in (0..15)
 for z in (0..15)
 	$simple_chunk[x,0,z]={:block_type=>7}
@@ -39,8 +39,8 @@ $simple_chunk[15,1,15]={:block_type=>86}# SouthWest=Pumpkin
 def send_level(socket)	
 	for x in -3..3 do 
 	for z in -3..3 do
-		socket.write Packet::PreChunk.new(Units::ChunkLength.new(x),Units::ChunkLength.new(z),Packet::PreChunk::INITIALIZE_CHUNK)
-		socket.write Packet::MapChunk.from_map_data(Units::ChunkLength.new(x),Units::ChunkLength.new(0),Units::ChunkLength.new(z),$simple_chunk)
+		socket.write Packet::PreChunk.new(x.chunk_lengths,z.chunk_lengths,Packet::PreChunk::INITIALIZE_CHUNK)
+		socket.write Packet::MapChunk.from_map_data(x.chunk_lengths,0.chunk_lengths,z.chunk_lengths,$simple_chunk)
 	end
 	end
 end
@@ -72,10 +72,10 @@ while true
 		last_keepalive=Time.now
 		players.each {|p| p.to_io.write(Packet::KeepAlive.new)}
 	end
-=begin	
-	if (Time.now-last_tick) >0.1
+
+	if (Time.now-last_tick) > 5
 		last_tick=Time.now
-		server_time+=1
+		#server_time+=1
 		tick_x+=1
 		if tick_x > 3*16
 			tick_x=0
@@ -85,15 +85,11 @@ while true
 				tick_y+=1
 			end
 		end
-		puts "server_time = #{server_time}"
-		players.each {|p| p.to_io.write(Packet::TimeUpdate.new(server_time))}
+		#puts "server_time = #{server_time}"
+		#players.each {|p| p.to_io.write(Packet::TimeUpdate.new(server_time))}
 		
-		players.each do |p|
-			p.to_io.write(Packet::BlockChange.new(Units::BlockLength.new(tick_x),Units::BlockLength.new(tick_y),Units::BlockLength.new(tick_z),86,0))
-		end
-		
+		players.each {|p| p.to_io.write(Packet::BlockChange.new(tick_x.block_lengths,tick_y.block_lengths,tick_z.block_lengths,86,0))}
 	end
-=end	
 	
 	if c.nil?
 		#puts "timedout on socket select."
@@ -134,8 +130,8 @@ while true
 				#puts "sending level...."
 				send_level(socket)
 				#puts "sending initial location"
-				socket.write(Packet::StoCPlayerPosLook.new(Units::BlockLength.new(0),Units::BlockLength.new(10),Units::BlockLength.new(10),Units::BlockLength.new(0),
-					Units::RotationInDegrees.new(0),Units::RotationInDegrees.new(0),0))
+				socket.write(Packet::StoCPlayerPosLook.new(0.block_lengths,10.block_lengths,10.block_lengths,0.block_lengths,
+					0.degrees,0.degrees,0))
 				socket.write(Packet::ChatMessage.new("Welcome to Yen's world!"))	
 			when Packet::CtoSPlayerPosLook
 				#pp current_player.position
