@@ -216,7 +216,7 @@ module Packet
 		attributes [[:entity_id,:int]]+YP_BYTE
 	end
 	class EntityLookAndRelativeMove < BasicPacket
-		tag 0x20
+		tag 0x21
 		directions [:server_to_client]
 		attributes [[:entity_id,:int]]+XYZ_BYTE_ABS+YP_BYTE
 	end
@@ -233,13 +233,103 @@ module Packet
 		end
 	end
 	
+	class PreChunk < BasicPacket
+		#will allocate a 16x128x16 block space at the specified coordinates
+		UNLOAD_CHUNK=0
+		INITIALIZE_CHUNK=1
+		tag 0x32
+		directions [:server_to_client]
+		attributes [[:x,:int,:chunk_len],[:z,:int,:chunk_len],[:mode,:bool]]
+	end
+	
+	class MapChunk < BasicPacket
+		tag 0x33
+		directions [:server_to_client]
+		attributes [
+			[:x,:int,:block_len],[:y,:short,:block_len],[:z,:int,:block_len],
+			[:size_x,:byte,:block_len],[:size_y,:byte,:block_len],[:size_z,:byte,:block_len]]
+		#we'll use attributes for the basic accessors, and we'll alias the original to_s and read_from_socket to get the compressed data & size.
+		#the default initializer won't be aware of compressed size/data.
+		attr_accessor :compressed_data, :map_data #:map_data is the uncompressed data
+		#just-in-time caching of the compressed/uncompressed data
+		def compressed_data
+			@compressed_data ||= @map_data.compress
+		end
+		def compressed_data=(val)
+			@map_data=nil
+			@compressed_data=val
+		end
+		def map_data
+			@map_data ||= MapData.uncompress(@size_x,@size_y,@size_z,@compressed_data)
+		end
+		def map_data=(val)
+			@compressed_data=nil
+			@map_data=val
+		end
+		class << self
+			alias_method(:orig_read_from_socket,:read_from_socket)
+			def read_from_socket(s)
+				temp=orig_read_from_socket(s)
+				len=s.read(4).unpack("N")[0]
+				temp.compressed_data = s.read(len)
+				temp
+			end
+		end
+		alias_method(:orig_to_s,:to_s)
+		def to_s
+			temp=orig_to_s
+			temp << [compressed_data.length].pack("N")
+			temp << compressed_data
+			temp
+		end
+	end
+	
+	class MultiBlockChange < BasicPacket
+		tag 0x034
+		directions [:server_to_client]
+		attributes [[:x,:int,:chunk_len],[:z,:int,:chunk_len]]
+		attr_accessor :coords,:types,:metadata
+		class << self
+			alias_method(:orig_read_from_socket,:read_from_socket)
+			def read_from_socket(s)
+				temp=orig_read_from_socket(s)
+				len=s.read(2).unpack("n")[0]
+					#coords is an array of packed shorts - xxxxzzzzyyyyyyyy
+				temp.coords=s.read(len*2).unpack("n"*len).map {|x| [(x/0x1000),(x%0x0100),(x%0x1000 / 0x0100)]}
+				temp.types=s.read(len).unpack("C"*len)
+				temp.metadata=s.read(len).unpack("C"*len)
+				temp
+			end
+		end
+		alias_method(:orig_to_s,:to_s)
+		def to_s
+			temp=orig_to_s
+			len=@coords.length
+			raise "Array Sizes don't match!" if (len != @types.length || len != @metadata.length)
+			temp << [len].pack("n")
+			temp << @coords.map {|(x,y,z)| (x*0x1000 + z*0x0100 + y)}.pack("n"*len)
+			temp << @types.pack("C"*len)
+			temp << @metadata.pack("C"*len)
+			temp
+		end
+	end
+	
+	class BlockChange < BasicPacket
+		tag 0x35
+		directions [:server_to_client]
+		attributes [
+			[:x,:int,:block_len],[:y,:byte,:block_len],[:z,:int,:block_len],
+			[:block_type,:byte],[:block_metadata,:byte]]
+	end
+	
+	#todo: complex entities (0x3b)
+	
 	class Disconnect < BasicPacket
 		tag 0xFF
 		directions BOTH #when it's client to server, it's a 'quit', when it's server to client, it's a 'kick'. I'm just going to call it a disconnect and not write two identical packets.
 		attributes [[:reason,:string]]
 	end
 	
-	#TODO: the rest of the packets
 	
 	
 	all_packets=constants.map {|x| const_get x}.select {|x| x.respond_to?(:directions)} -[BasicPacket]

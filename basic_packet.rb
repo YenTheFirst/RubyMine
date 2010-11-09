@@ -72,13 +72,15 @@ module Packet
 				:rotation_in_degrees=>"to_rotation_in_degrees",
 				:rotation_in_byte=>"to_rotation_in_byte_fraction",
 				:block_len=>"to_block_length",
-				:abs_len=>"to_abs_length"
+				:abs_len=>"to_abs_length",
+				:chunk_len=>"to_chunk_len"
 			}
 			INTERNAL_TYPE_CLASSES={
 				:rotation_in_degrees=>Units::RotationInDegrees,
 				:rotation_in_byte=>Units::RotationInByteFraction,
 				:block_len=>Units::BlockLength,
-				:abs_len=>Units::AbsLength
+				:abs_len=>Units::AbsLength,
+				:chunk_len=>Units::ChunkLength
 			}
 			def attributes(attr_array)
 				#do the whole packet class in one easy method!
