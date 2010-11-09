@@ -54,7 +54,22 @@ module Packet
 	class TimeUpdate < BasicPacket
 		tag 0x04
 		directions [:server_to_client]
-		attributes [[:time_in_minutes,:long]]
+		#attributes [[:time_in_minutes,:long]]
+		#for now, instead of trying to hack proper long support, I'll just have a 'high' and 'low' int
+		attributes [[:high_time,:int],[:low_time,:int]]
+		
+		
+		def time=(value)
+			v=value.to_milli_hours.to_i
+			@high_time = v >> 32
+			@low_time = v & 0xFFFFFFFF
+		end
+		def time
+			Units::MilliHours.new((@high_time << 32)+@low_time)
+		end
+		def initialize(value)
+			self.time=value
+		end
 	end
 	class InventoryUpdate < BasicPacket
 		tag 0x05
@@ -66,15 +81,15 @@ module Packet
 		DEFAULT_COUNT={MAIN_INVENTORY=>36,EQUIPPED_ARMOR=>4,CRAFTING_SLOTS=>4}
 		default_initializer [:section,[:count,{:default=>"DEFAULT_COUNT[_section]"}],[:inventory,{:default=>"Array.new(_count,-1)"}]]
 		def self.read_from_socket(s)
-			section=s.read_network_signed_long
-			count=s.read_network_unsigned_short
+			section=s.read(4).unpack("N").pack("L").unpack("l")[0]
+			count=s.read(2).unpack("n")[0]
 			inventory=Array.new(count)
-			inventory.map do 
-				item_id=s.read_network_unsigned_short
+			inventory.map! do
+				item_id=s.read(2).unpack("n").pack("S").unpack("s")[0]
 				unless (item_id == -1)
 					{:item_id=>item_id,
 					:count=>s.readbyte,
-					:health=>s.read_network_unsigned_short}
+					:health=>s.read(2).unpack("n")[0]}
 				end
 			end
 			self.new(section,count,inventory)

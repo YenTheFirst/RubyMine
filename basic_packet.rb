@@ -63,7 +63,9 @@ module Packet
 				:byte=>{:format=>"C",:len=>1},
 				:short=>{:format=>"n",:len=>2,:signed_format=>"s"},
 				:int=>{:format=>"N",:len=>4,:signed_format=>"L"},
-				:long=>{:format=>"q",:len=>8},
+				:long=>{:format=>"q",:len=>8}, #NOTE: this in in native order, not network order.
+					#there must be a better way in ruby to convert native<=>network, without having a bunch of platform detecting code.
+					#maybe I'll just do platform detecting code...
 				:float=>{:format=>"g",:len=>4},
 				:double=>{:format=>"G",:len=>8},
 				:bool=>{:format=>"C",:len=>1},

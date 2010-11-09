@@ -62,10 +62,10 @@ begin
 
 last_keepalive=Time.now
 last_tick=Time.now
-	server_time = 10000
+	server_time = 0
 	tick_x,tick_y,tick_z=[-3*16,3,-3*16]
 while true
-	c=Kernel.select(players+[server],nil,nil,2)
+	c=Kernel.select(players+[server],nil,nil,0.1)
 	
 	if (Time.now-last_keepalive) > 30
 		puts "doing keepalive"
@@ -73,9 +73,14 @@ while true
 		players.each {|p| p.to_io.write(Packet::KeepAlive.new)}
 	end
 
-	if (Time.now-last_tick) > 5
+	if (Time.now-last_tick) > 1
 		last_tick=Time.now
-		#server_time+=1
+		
+		server_time+=0.25
+		puts "server_time = #{server_time} (day=#{server_time/24}, hour=#{server_time%24})"
+		players.each {|p| p.to_io.write(Packet::TimeUpdate.new(server_time.minecraft_hours))}
+		
+		
 		tick_x+=1
 		if tick_x > 3*16
 			tick_x=0
@@ -85,10 +90,8 @@ while true
 				tick_y+=1
 			end
 		end
-		#puts "server_time = #{server_time}"
-		#players.each {|p| p.to_io.write(Packet::TimeUpdate.new(server_time))}
 		
-		players.each {|p| p.to_io.write(Packet::BlockChange.new(tick_x.block_lengths,tick_y.block_lengths,tick_z.block_lengths,86,0))}
+		#players.each {|p| p.to_io.write(Packet::BlockChange.new(tick_x.block_lengths,tick_y.block_lengths,tick_z.block_lengths,86,0))}
 	end
 	
 	if c.nil?
@@ -132,7 +135,13 @@ while true
 				#puts "sending initial location"
 				socket.write(Packet::StoCPlayerPosLook.new(0.block_lengths,10.block_lengths,10.block_lengths,0.block_lengths,
 					0.degrees,0.degrees,0))
-				socket.write(Packet::ChatMessage.new("Welcome to Yen's world!"))	
+				socket.write(Packet::ChatMessage.new("Welcome to Yen's world!"))
+				
+				#give them a free watch.
+				socket.write(Packet::InventoryUpdate.new(
+					Packet::InventoryUpdate::MAIN_INVENTORY,
+					36,
+					[{:item_id=>0x15b,:count=>1,:health=>0x00}]+[nil]*35))
 			when Packet::CtoSPlayerPosLook
 				#pp current_player.position
 				current_player.position.update_from_object(packet)

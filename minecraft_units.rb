@@ -79,6 +79,30 @@ module Units
 			self
 		end
 	end
+	
+	
+	#TIME
+		#the documentation says time is sent out in minutes, but it's not really 'minutes'. one day cycle seems to be about 24000 increments of the value
+		#so, if we call it a 24 hour day, each increment is 1/1000 of an 'hour'.
+		#I'm going to call it a milli-hour for now. 
+		#0/24 is dawn, 6 is noonish, 12 is dusk, 18 is midnightish
+	class MinecraftHours < BasicUnit
+		def to_minecraft_hours
+			self
+		end
+		def to_milli_hours
+			MilliHours.new @val * 1000
+		end
+	end
+		#do we want to call it minecraft_milli_hours?
+	class MilliHours < BasicUnit
+		def to_minecraft_hours
+			MinecraftHours.new self / 1000.0
+		end
+		def to_milli_hours
+			self
+		end
+	end
 end
 
 class Numeric
@@ -88,6 +112,8 @@ class Numeric
 	def byte_fractions #wtf to call it?
 		Units::RotationInByteFraction.new(self)
 	end
+	
+	
 	def block_lengths
 		Units::BlockLength.new(self)
 	end
@@ -96,5 +122,12 @@ class Numeric
 	end
 	def chunk_lengths
 		Units::ChunkLength.new(self)
+	end
+	
+	def minecraft_hours
+		Units::MinecraftHours.new(self)
+	end
+	def milli_hours
+		Units::MilliHours.new(self)
 	end
 end
