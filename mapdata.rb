@@ -12,6 +12,15 @@ class String
 		self.unpack("C"*self.length).map {|x| [x/0x10,x%0x10]}.flatten
 	end
 end
+
+class Range
+	def subset?(other)
+		self.first<= other.first && self.end >= other.end
+	end
+	def subset_of?(other)
+		other.subset? self
+	end
+end
 class MapData
 	#we don't want the outside world messing with our arrays directly, they have to go through us.
 	#this design may change in the future, if I feel like it.
@@ -28,25 +37,21 @@ class MapData
 		when 1 #can be a range, or an individual index
 			case args[0]
 			when Fixnum
-				raise IndexError unless (-length..length-1).include? args[0]
-				{:type=>@block_type[args[0]],
-				:metadata=>@metadata[args[0]],
-				:block_light=>@block_light[args[0]],
-				:sky_light=>@block_light[args[0]]}
+				get_block(args[0])
 			when Range
-				raise "not yet implemented range"
+				#range can be an index range, or an coord triple range
+				if (args[0].begin.is_a? Fixnum)
+					get_index_range(args[0])
+				else
+					get_coord_range(args[0])
+				end
 			else
 				raise "unrecognized index type"
 			end
 		when 2 #start,length
-			raise "not yet implemented start,length"
+			get_index_range(args[0]..(args[0]+args[1]-1))
 		when 3 #single xyz index
-			i=index_from_xyz(*args)
-			raise IndexError unless (-length..length-1).include? i
-			{:type=>@block_type[i],
-			:metadata=>@metadata[i],
-			:block_light=>@block_light[i],
-			:sky_light=>@block_light[i]}
+			get_block(index_from_xyz(*args))
 		else
 			raise "wrong number of arguments for []"
 		end
@@ -56,29 +61,35 @@ class MapData
 		when 2 #simple index, or range
 			case args[0]
 			when Fixnum
-				raise IndexError unless (-length..length-1).include? args[0]
-				for key,val in args[1]
-					instance_variable_get("@"+key.to_s)[args[0]]=val
-				end
+				set_block(args[0],args[1])
 			when Range
-				raise "not yet implemented range"
+				if (args[0].begin.is_a? Fixnum)
+					set_index_range(args[0],args[1])
+				else
+					set_coord_range(args[0],args[1])
+				end
 			else
 				raise "unrecognized index type"
 			end
 		when 3 #start,length
-			raise "not yet implemented start,length"
+			set_index_range((args[0]..args[0]+args[1]),args[2])
 		when 4 #single xyz index
-			i=index_from_xyz(*args[0,3])
-			raise IndexError unless (-length..length-1).include? i
-			for key,val in args[3]
-				instance_variable_get("@"+key.to_s)[i]=val
-			end
+			set_block(index_from_xyz(*args[0..2]),args[3])
 		else
 			raise "wrong number of arguments for []="
 		end
 	end
 	def index_from_xyz(x,y,z)
-		y.to_i+(z*@size_y.to_i)+(x*@size_y.to_i*@size_z.to_i)
+		# a negative index on any dimension will wrap around on that dimension, like an index array
+		#also, we'll check individual dimensions for index legality
+		
+		%w{x y z}.each do |dim|
+			s=instance_variable_get("@size_#{dim}").to_i
+			val=eval(dim) #ugly. :(
+			raise IndexError.new "#{dim}=#{val} is not in the acceptable range for #{dim} (#{-s..s-1})" unless (-s..s-1).include? val
+			eval("#{dim} += s") if val < 0
+		end
+		(x.to_i*@size_z.to_i+z.to_i)*@size_y.to_i+y.to_i
 	end
 	
 	def initialize(_size_x,_size_y,_size_z)
@@ -115,4 +126,93 @@ class MapData
 		my_new.sky_light = temp(len*2..len*2.5).unpack_nibble_array
 		my_new
 	end
+	
+	private
+	def get_block(index)
+		raise IndexError unless (-length..length-1) === index
+		{:block_type=>@block_type[index],
+		:metadata=>@metadata[index],
+		:block_light=>@block_light[index],
+		:sky_light=>@sky_light[index]}
+	end
+	def get_index_range(r)
+		raise IndexError unless (-length..length-1).subset? r
+		r.map {|x| get_block(x)}
+	end
+	def set_block(index,new_block)
+		raise IndexError unless (-length..length-1).include? index
+		return if new_block.nil?
+		for key,val in new_block
+			instance_variable_get("@"+key.to_s)[index]=val
+		end
+	end
+	def set_index_range(r,new_val)
+		raise IndexError unless (-length..length-1).subset? r
+		case new_val
+		when Hash #single new object
+			r.each {|i| set_block(i,new_val)}
+		when Array
+			raise "Length Mismatch" unless new_val.length == r.count
+			r.each {|i| set_block(i,new_val[i-r.begin])}
+		else
+			raise "unknown type to set"
+		end
+	end
+	def get_coord_range(r)
+		%w{x y z}.each_with_index do |dim,i|
+			dim_range = r.begin[i]..r.end[i]
+			size_range= 0..instance_variable_get("@size_#{dim}").to_i
+			raise IndexError.new "#{dim}=#{dim_range} is not in the acceptable range for #{dim} (#{size_range})" unless size_range.subset? dim_range
+		end
+		#for now, it will return a triple array. in the future, I may have it return a new mapdata instead., and mapdata will have a .to_triple_array method or somesuch.
+		#return things in XZY order, as that's how it's supposed to be indexed. debatable?
+		Array.new((r.begin[0]..r.end[0]).count) do |ix| 
+			Array.new((r.begin[2]..r.end[2]).count) do |iz|
+				Array.new((r.begin[1]..r.end[1]).count) do |iy|
+					get_block(index_from_xyz(ix-r.begin[0],iy-r.begin[1],iz-r.begin[2]))
+				end
+			end
+		end
+	end
+	def set_coord_range(r,new_val)
+		range_x=r.begin[0]..r.end[0]
+		range_y=r.begin[2]..r.end[1]
+		range_z=r.begin[2]..r.end[1]
+		%w{x y z}.each_with_index do |dim,i|
+			temp_r= r.begin[i]..r.end[i]
+			size_range= 0..instance_variable_get("@size_#{dim}").to_i
+			raise IndexError.new "#{dim}=#{temp_r} is not in the acceptable range for #{dim} (#{size_range})" unless size_range.subset? temp_r
+		end
+		
+		case new_val
+		when Hash #easy enough, set everything to that value
+			(range_x).each do |ix|
+			(range_y).each do |iy|
+			(range_z).each do |iz|
+				set_block(index_from_xyz(ix,iy,iz),new_val)
+			end
+			end
+			end
+		when Array
+			#should be a 3-deep array.
+			raise "Array Length Mismatch on x" unless new_val.length == range_x.count
+			new_val.each_with_index do |zy_plane,ix|
+				next if zy_plane.nil?
+				raise "Array Length Mismatch on zy_plane #{ix}" unless zy_plane.length == range_z.count
+				zy_plane.each_with_index do |y_col,iz|
+					next if y_col.nil?
+					raise "Array Length Mismatch on y_col #{ix},#{iz}. length=#{y_col.length}, range size=#{range_y.count}" unless y_col.length == range_y.count
+					y_col.each_with_index do |block,iy|
+						set_block(index_from_xyz(ix-range_x.begin,iy-range_y.begin,iz-range_z.begin),block)
+					end
+				end
+			end
+		when MapData
+			raise "error, can't be set from mapdata yet"
+		else
+			raise "unknown type to set"
+		end
+		
+	end
 end
+
