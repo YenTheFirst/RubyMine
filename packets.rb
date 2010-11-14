@@ -54,7 +54,22 @@ module Packet
 	class TimeUpdate < BasicPacket
 		tag 0x04
 		directions [:server_to_client]
-		attributes [[:time_in_minutes,:long]]
+		#attributes [[:time_in_minutes,:long]]
+		#for now, instead of trying to hack proper long support, I'll just have a 'high' and 'low' int
+		attributes [[:high_time,:int],[:low_time,:int]]
+		
+		
+		def time=(value)
+			v=value.to_milli_hours.to_i
+			@high_time = v >> 32
+			@low_time = v & 0xFFFFFFFF
+		end
+		def time
+			Units::MilliHours.new((@high_time << 32)+@low_time)
+		end
+		def initialize(value)
+			self.time=value
+		end
 	end
 	class InventoryUpdate < BasicPacket
 		tag 0x05
@@ -66,15 +81,15 @@ module Packet
 		DEFAULT_COUNT={MAIN_INVENTORY=>36,EQUIPPED_ARMOR=>4,CRAFTING_SLOTS=>4}
 		default_initializer [:section,[:count,{:default=>"DEFAULT_COUNT[_section]"}],[:inventory,{:default=>"Array.new(_count,-1)"}]]
 		def self.read_from_socket(s)
-			section=s.read_network_signed_long
-			count=s.read_network_unsigned_short
+			section=s.read(4).unpack("N").pack("L").unpack("l")[0]
+			count=s.read(2).unpack("n")[0]
 			inventory=Array.new(count)
-			inventory.map do 
-				item_id=s.read_network_unsigned_short
+			inventory.map! do
+				item_id=s.read(2).unpack("n").pack("S").unpack("s")[0]
 				unless (item_id == -1)
 					{:item_id=>item_id,
 					:count=>s.readbyte,
-					:health=>s.read_network_unsigned_short}
+					:health=>s.read(2).unpack("n")[0]}
 				end
 			end
 			self.new(section,count,inventory)
@@ -88,6 +103,13 @@ module Packet
 		tag 0x06
 		directions [:server_to_client]
 		attributes [[:x,:int,:block_len],[:y,:int,:block_len],[:z,:int,:block_len]]
+	end
+	class UseEntity < BasicPacket
+		#warning, this packet is still not yet fully understood
+		warnnew
+		tag 0x07
+		directions [:client_to_server]
+		attributes [[:user_eid,:int],[:target_eid,:int]]
 	end
 	class OnGround < BasicPacket
 		tag 0x0A
@@ -194,6 +216,14 @@ module Packet
 		directions [:server_to_client]
 		attributes  [[:entity_id,:int],[:mob_type,:byte]]+XYZ_INT_ABS+YP_BYTE
 	end
+	class EntityVelocity < BasicPacket
+		#WARNING: also new
+		warnnew
+		tag 0x1C
+		directions [:server_to_client]
+			#todo: create velocity-related units
+		attributes [[:entity_id,:int],[:vel_x,:short],[:vel_y,:short],[:vel_z,:short]]
+	end
 	class DestroyEntity < BasicPacket
 		tag 0x1D
 		directions [:server_to_client]
@@ -232,7 +262,12 @@ module Packet
 				p.yaw,p.pitch)
 		end
 	end
-	
+	class AttachEntity
+		warnnew
+		tag 0x27
+		directions [:server_to_client]
+		attributes [[:entity_id,:int],[:vehicle_id,:int]]
+	end
 	class PreChunk < BasicPacket
 		#will allocate a 16x128x16 block space at the specified coordinates
 		UNLOAD_CHUNK=0
@@ -275,9 +310,8 @@ module Packet
 				temp
 			end
 			def from_map_data(x,y,z,m)
-				one=Units::BlockLength.new(1)
 				temp=self.new(x,y,z,
-					m.size_x-one,m.size_y-one,m.size_z-one)
+					m.size_x-1.block_lengths,m.size_y-1.block_lengths,m.size_z-1.block_lengths)
 				temp.map_data=m
 				temp
 			end
