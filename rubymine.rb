@@ -1,195 +1,98 @@
+#until I can figure out the best way of doing things, for now I'm refactoring into the simplest thing possible. more features & elegant solutions can come as they're needed.
+#so, for now, there will be a single threaded, pure network oriented server, and it will make regular, single thread, blocking calls to a world model
 require 'socket'
-require 'zlib'
-
-require 'pp'
 
 require 'packets.rb'
 require 'things.rb'
-require 'mapdata.rb'
+require 'world_model.rb'
 
 
 server=TCPServer.new 25565
-players=[]
+world=WorldModel.new
 
+puts "server started"
 
-$simple_chunk = MapData.new(Units::BlockLength.new(16),Units::BlockLength.new(128),Units::BlockLength.new(16))
-for x in (0..15)
-for z in (0..15)
-	$simple_chunk[x,0,z]={:block_type=>7}
-end
-end
-
-for i in (0..$simple_chunk.length-1) #because I haven't implemented .each yet
-	$simple_chunk[i]={:sky_light=>255}
-end
-
-#put a little node at the 8 edges of the chunk
-$simple_chunk[0,1,0]={:block_type=>2}	#NorthEast = grass
-$simple_chunk[7,1,0]={:block_type=>5}	#North=wood
-$simple_chunk[15,1,0]={:block_type=>18}	#NorthWest=leaves
-
-$simple_chunk[0,1,7]={:block_type=>41}	#East = gold block
-$simple_chunk[7,1,7]={:block_type=>12}	#Center=sand
-$simple_chunk[15,1,7]={:block_type=>20}	#West=glass
-
-$simple_chunk[0,1,15]={:block_type=>45}	# SouthEast = Brick
-$simple_chunk[7,1,15]={:block_type=>57}	# South=Diamond Block
-$simple_chunk[15,1,15]={:block_type=>86}# SouthWest=Pumpkin
-
-def send_level(socket)	
-	for x in -3..3 do 
-	for z in -3..3 do
-		socket.write Packet::PreChunk.new(Units::ChunkLength.new(x),Units::ChunkLength.new(z),Packet::PreChunk::INITIALIZE_CHUNK)
-		socket.write Packet::MapChunk.from_map_data(Units::ChunkLength.new(x),Units::ChunkLength.new(0),Units::ChunkLength.new(z),$simple_chunk)
-	end
-	end
-end
-
-
-
-=begin #uncomment this for some useful debugging
-class BasicSocket
-	alias_method :old_write,:write
-	def write(s)
-		STDOUT.puts "writing the stream "
-		pp s.to_s.bytes.to_a[0,20]
-		old_write s
-	end
-end
-=end
-
-begin
+players=world.all_players #use that as our direct working copy
 
 last_keepalive=Time.now
 last_tick=Time.now
-	server_time = 10000
-	tick_x,tick_y,tick_z=[-3*16,3,-3*16]
+
 while true
-	c=Kernel.select(players+[server],nil,nil,2)
+	c=Kernel.select(players+[server],nil,nil,(Time.now-last_tick))
 	
 	if (Time.now-last_keepalive) > 30
-		puts "doing keepalive"
 		last_keepalive=Time.now
+			#I think keepalive is more of a protocol thing than a world model thing, so the server thread will handle it.
 		players.each {|p| p.to_io.write(Packet::KeepAlive.new)}
 	end
-=begin	
-	if (Time.now-last_tick) >0.1
+	if (Time.now-last_tick) > 1 #do a 'tick' every second
 		last_tick=Time.now
-		server_time+=1
-		tick_x+=1
-		if tick_x > 3*16
-			tick_x=0
-			tick_z+=1
-			if tick_z > 3*16
-				tick_z=0
-				tick_y+=1
-			end
-		end
-		puts "server_time = #{server_time}"
-		players.each {|p| p.to_io.write(Packet::TimeUpdate.new(server_time))}
-		
-		players.each do |p|
-			p.to_io.write(Packet::BlockChange.new(Units::BlockLength.new(tick_x),Units::BlockLength.new(tick_y),Units::BlockLength.new(tick_z),86,0))
-		end
-		
+		world.tick
 	end
-=end	
-	
-	if c.nil?
-		#puts "timedout on socket select."
-		next
-	end
+
+	next if c.nil? #timed out on socket select
 	
 	if c[0].include? server
 		puts "adding a new player..."
 		p=Player.new
 		p.socket=server.accept
+		p.status=Player::STATUS_CONNECTED
 		players << p
 		puts "\taccepted new player. count=#{players.length}"
 		c[0].delete server
 	end
 	
 	for current_player in c[0]
-		other_players = players-[current_player]
+#		other_players = players-[current_player]
 		socket=current_player.to_io
-		packet_type=Packet::client_packet_for_tag(tag=socket.readbyte)
-		raise "unknown packet 0x%02x"%tag unless packet_type
-		packet=packet_type.read_from_socket(socket)
-		#puts "read the packet:"
-		#pp packet
-		case packet
-			when Packet::ArmAnimation
-				#puts "got arm animation: #{packet.entity_id} #{packet.animate}"
-			when Packet::ChatMessage
-				puts "got message: #{packet.message}"
-				msg=Packet::ChatMessage.new("#{current_player.username}: #{packet.message}").to_s
-				players.each {|p| p.to_io.write(msg)}
-			when Packet::ClientHandshake
-				puts "got handshake from #{packet.username}. responding with server handshake"
-				socket.write(Packet::ServerHandshake.new(Packet::ServerHandshake::NO_AUTH))
-			when Packet::LoginRequest
-				puts "got login request from client with username #{packet.username} and password #{packet.password}. protocol version #{packet.protocol_version}. responding with login_response"
-				current_player.username=packet.username
-				socket.write(Packet::LoginResponse.new)
-				#puts "sending level...."
-				send_level(socket)
-				#puts "sending initial location"
-				socket.write(Packet::StoCPlayerPosLook.new(Units::BlockLength.new(0),Units::BlockLength.new(10),Units::BlockLength.new(10),Units::BlockLength.new(0),
-					Units::RotationInDegrees.new(0),Units::RotationInDegrees.new(0),0))
-				socket.write(Packet::ChatMessage.new("Welcome to Yen's world!"))	
-			when Packet::CtoSPlayerPosLook
-				#pp current_player.position
-				current_player.position.update_from_object(packet)
-				current_player.last_relative_position=current_player.position.clone
-				
-				if (!current_player.initial_position_set)
+		
+		begin #catch errors in reading the packet, or writing a response
+		
+			packet_type=Packet::client_packet_for_tag(tag=socket.readbyte)
+			raise "unknown packet 0x%02x"%tag unless packet_type
+			packet=packet_type.read_from_socket(socket)
+			
+			
+			case packet
+				#THESE 3 packets are all login related. this relates to protocol.
+				#the last can actually be both, depending on player state
+				when Packet::ClientHandshake
+					current_player.assert_status Player::STATUS_CONNECTED
+					current_player.status=Player::STATUS_HANDSHAKE_SENT
+					socket.write(Packet::ServerHandshake.new(Packet::ServerHandshake::NO_AUTH))
+				when Packet::LoginRequest
+					current_player.assert_status Player::STATUS_HANDSHAKE_SENT
 					
-					current_player.initial_position_set=true
-					#this is their first response look. this is when we know they're logged in for good. set their position, and tell them about the other players.
-					
-					#inform them of other players, and inform the other players we'll just do all, since it's a small map and we assume they're all visible
-					other_msg=Packet::NamedEntitySpawn.from_player(current_player).to_s
-					other_players.each {|p| p.to_io.write(other_msg)}
-					other_players.each {|p| socket.write(Packet::NamedEntitySpawn.from_player(p)); puts "\tdid my nameentityspawn"}
+					current_player.username=packet.username
+					#theoretically, do auth here.
+					socket.write(Packet::LoginResponse.new)
+					current_player.status=Player::STATUS_LOGGED_IN
+					world.setup_player(current_player)
+				when Packet::CtoSPlayerPosLook
+					#if the player is not ready yet, they send us this packet when they are ready.
+					if current_player.status < Player::STATUS_READY
+						current_player.status=Player::STATUS_READY
+						# TODO: assert that the packet indicates the same position we told them to come in at. or, maybe the server thread will do that.
+						current_player.position.update_from_object(packet)
+						world.player_ready(current_player)
+					else
+						#world.handle(current_player,packet)
+					end
+				when Packet::Disconnect
+					world.disconnect current_player,packet.reason
+					current_player.status=Player::STATUS_DISCONNECTED
+					players.delete current_player
+					current_player.socket.close
 				else
-					other_msg = Packet::EntityTeleport.from_player(current_player)
-					other_players.each {|p| p.to_io.write(other_msg)}
-				end
-			when Packet::PlayerLook
-				#pp packet
-				current_player.position.update_from_object(packet)
-				other_msg = Packet::EntityLook.new(current_player.entity_id,current_player.position.yaw,current_player.position.pitch).to_s
-				other_players.each {|p| p.to_io.write(other_msg)}
-			when Packet::PlayerPosition
-				#pp packet
-				current_player.position.update_from_object(packet)
-				#diff = ["x","y","z"].map {|field| (current_player.position.send(field)-current_player.last_relative_position.send(field)).to_i}
-				#if diff.map(&:abs).max > 0
-					#other_msg = if (diff.map(&:abs).max) > 4*32 #movements of more than 4 blocks use a teleport, not a relativemove
-						current_player.last_relative_position=current_player.position.clone
-					other_msg=	Packet::EntityTeleport.from_player(current_player)
-					#else
-					#	current_player.last_relative_position.x +=diff[0]
-					#	current_player.last_relative_position.y +=diff[1]
-					#	current_player.last_relative_position.z +=diff[2]
-					#	Packet::EntityRelativeMove.new(current_player.entity_id,*diff)
-					#end
-					other_players.each {|p| p.to_io.write(other_msg)}
-				#end
-			when Packet::Disconnect
-				puts "current player is quitting for reason: #{packet.reason}"
-				players.delete current_player
-				current_player.socket.close
-				puts "now there are #{players.length} players"
-			when Packet::OnGround
-			#	puts "client tells us they are #{'not ' unless packet.is_on_ground} on the ground. good for them."
-			else
-			#	puts "client tells us: #{packet.inspect}"
-		end
-	end
-end
-
-
-ensure
-	server.close
+					world.handle(current_player,packet)
+			end #of case
+		
+		rescue EOFError, IOError, Errno::EPIPE, Errno::ECONNRESET => e 
+			STDERR.puts "communication error #{e}. disconnecting player"
+			world.disconnect current_player,"connection error"
+			current_player.status=PLAYER::STATUS_DISCONNECTED
+			players.delete current_player
+			current_player.socket.close
+		end # of begin-rescue
+	end # of for each player
 end

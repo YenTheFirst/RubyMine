@@ -10,6 +10,9 @@ module Units
 	#TODO: investigate!
 	class BasicUnit < Numeric
 		attr_accessor :val
+		class << self
+			attr_accessor :pp_name
+		end
 		def initialize(val);@val=val;end
 		def to_f
 			@val.to_f
@@ -17,9 +20,17 @@ module Units
 		def to_i
 			@val.to_i
 		end
+		def pretty_print(the_pp)
+			if @val.is_a? Fixnum
+				the_pp.text "%8d %s" % [@val,self.class.pp_name]
+			else
+				the_pp.text "%8.2f %s" % [@val,self.class.pp_name]
+			end
+		end
 	end
 	#rotational
 	class RotationInDegrees < BasicUnit
+		@pp_name = "degrees"
 		def to_rotation_in_degrees
 			self
 		end
@@ -34,6 +45,7 @@ module Units
 	end
 	#because we HAVE to save those 3 bytes sending a byte fraction instead of a float in the EntityLookPackets. Really. serious business.
 	class RotationInByteFraction < BasicUnit
+		@pp_name="byte rotations"
 		def to_rotation_in_degrees
 			RotationInDegrees(@val * (360.0/255.0))
 		end
@@ -44,6 +56,7 @@ module Units
 	
 	#length - it can be measured either in block lengths (which == 1 meter, apparently), or in 'pixels', which are 32 pixels:1 block.
 	class BlockLength < BasicUnit
+		@pp_name = "block lengths"
 		def to_abs_length
 			AbsLength.new(@val*32.0)
 		end
@@ -56,8 +69,12 @@ module Units
 		def -(other)
 			BlockLength.new(@val-other.to_block_length.val)
 		end
+		def +(other)
+			BlockLength.new(@val+other.to_block_length.val)
+		end
 	end
 	class AbsLength < BasicUnit
+		@pp_name = "absolute pixels"
 		def to_abs_length
 			self
 		end
@@ -69,6 +86,7 @@ module Units
 		end
 	end
 	class ChunkLength < BasicUnit
+		@pp_name = "chunk lengths"
 		def to_abs_length
 			AbsLength.new(@val*16*32)
 		end
@@ -87,6 +105,7 @@ module Units
 		#I'm going to call it a milli-hour for now. 
 		#0/24 is dawn, 6 is noonish, 12 is dusk, 18 is midnightish
 	class MinecraftHours < BasicUnit
+		@pp_name = "minecraft hours"
 		def to_minecraft_hours
 			self
 		end
@@ -96,6 +115,7 @@ module Units
 	end
 		#do we want to call it minecraft_milli_hours?
 	class MilliHours < BasicUnit
+		@pp_name="milli hours"
 		def to_minecraft_hours
 			MinecraftHours.new self / 1000.0
 		end
@@ -103,31 +123,13 @@ module Units
 			self
 		end
 	end
+	ALL_UNITS = constants.map {|x| const_get x}.select {|x| x.is_a?(Class) && x.superclass == BasicUnit}
+	#todo: add velocity units
 end
 
 class Numeric
-	def degrees
-		Units::RotationInDegrees.new(self)
-	end
-	def byte_fractions #wtf to call it?
-		Units::RotationInByteFraction.new(self)
-	end
-	
-	
-	def block_lengths
-		Units::BlockLength.new(self)
-	end
-	def abs_lengths
-		Units::AbsLength.new(self)
-	end
-	def chunk_lengths
-		Units::ChunkLength.new(self)
-	end
-	
-	def minecraft_hours
-		Units::MinecraftHours.new(self)
-	end
-	def milli_hours
-		Units::MilliHours.new(self)
+	Units::ALL_UNITS.each do |u|
+		sym=u.pp_name.downcase.gsub(/\s/,'_').to_sym
+		define_method(u.pp_name.downcase.gsub(/\s/,'_').to_sym) {u.new(self)}
 	end
 end

@@ -52,6 +52,7 @@ class MapData
 		end
 	end
 	def []=(*args)
+		@cached_compress = nil
 		case args.length
 		when 2 #simple index, or range
 			case args[0]

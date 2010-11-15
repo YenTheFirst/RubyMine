@@ -154,6 +154,10 @@ module Packet
 	#TODO: double check the "-Y +Y -Z +Z -X	 +X" against cardinal directions.
 	#for that matter, DEFINE cardinal directions...
 	ALL_FACES=[TOP=0,BOTTOM=1,EAST=2,WEST=3,SOUTH=4,NORTH=5]
+	FACE_MINUS_Y=0;FACE_PLUS_Y=1;
+	FACE_MINUS_Z=2;FACE_PLUS_Z=3;
+	FACE_MINUS_X=4;FACE_PLUS_X=5;
+	
 	class PlayerDigging < BasicPacket
 		tag 0x0E
 		directions [:client_to_server]
@@ -227,12 +231,12 @@ module Packet
 	class DestroyEntity < BasicPacket
 		tag 0x1D
 		directions [:server_to_client]
-		attributes [[:entity_id,:id]]
+		attributes [[:entity_id,:int]]
 	end
 	class EntityInitialize < BasicPacket
 		tag 0x1E
 		directions [:server_to_client]
-		attributes [[:entity_id,:id]]
+		attributes [[:entity_id,:int]]
 	end
 		#relative move is for moves<4 blocks [128 pixels]
 	class EntityRelativeMove < BasicPacket

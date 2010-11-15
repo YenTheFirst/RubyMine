@@ -1,17 +1,33 @@
 require 'minecraft_units.rb'
 
 class Player
-	attr_accessor :socket, :timeout, :initial_position_set
-	attr_accessor :username,:last_relative_position
-	attr_accessor :position, :entity_id
+	STATUS_UNCONNECTED=0
+	STATUS_CONNECTED=1
+	STATUS_HANDSHAKE_SENT=2
+	STATUS_LOGIN_REQUESTED=3
+	STATUS_LOGGED_IN=4
+	STATUS_READY=5
+	STATUS_DISCONNECTED=99
+	attr_accessor :socket, :timeout, :status
+	attr_accessor :username,:entity_id
+	attr_accessor :position, :inventory
 	def initialize
-		@initial_position_set=false
+		@status=STATUS_UNCONNECTED
 		@position=Position.new
 		@last_relative_position
 		@entity_id=rand(1000)
+			#for now, all players get a free watch and compass. yay free stuff.
+			#notch uses -1,-2,-3 for inventory types.. why? I dunno.
+			#I'm mapping -1:0, -2:1, -3:2. i.e., my_i=-(i+1), or i=-(my_i+1)
+				#or rather, abs(i)+1, -my_i -1
+		@inventory=[[{:item_id=>0x15b,:count=>1,:health=>0x00},{:item_id=>0x159,:count=>1,:health=>0x00}]+[nil]*34,
+			[nil]*4,[nil]*4]
 	end
 	def to_io
 		socket
+	end
+	def assert_status(status)
+		raise "Error, player status is #{@status}, not #{status}" if @status!=status
 	end
 end
 
