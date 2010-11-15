@@ -21,8 +21,8 @@ module Packet
 		class << self
 			attr_reader :tag, :directions, :my_attributes
 			def warnnew
-				STDERR.puts "warning, the packet #{this.name} is still not yet fully understood"
-			
+				STDERR.puts "warning, the packet #{self.name} is still not yet fully understood"
+			end
 			#it's kind of ugly, but it allows fancy meta-programming in the class definitions, while still allowing reading.
 			def tag(*args); args.empty? ? @tag : @tag=args[0]; end
 			def directions(*args); args.empty? ? @directions : @directions=args[0]; end

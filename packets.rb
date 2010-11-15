@@ -262,7 +262,7 @@ module Packet
 				p.yaw,p.pitch)
 		end
 	end
-	class AttachEntity
+	class AttachEntity < BasicPacket
 		warnnew
 		tag 0x27
 		directions [:server_to_client]
